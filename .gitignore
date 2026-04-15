@@ -64,6 +64,37 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+backend/.env
+backend/.env.local
 
 # dataconnect generated files
 .dataconnect
+
+# Frontend build output
+frontend/dist/
+frontend/build/
+
+# Backend Python
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/*.pyo
+backend/*.pyd
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
