@@ -1,0 +1,53 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read":  "$uid === auth.uid || root.child('users/'+auth.uid+'/role').val() === 'admin'",
+        ".write": "root.child('users/'+auth.uid+'/role').val() === 'admin'"
+      }
+    },
+
+    "listings": {
+      ".read":  "auth != null",
+      ".write": "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'"
+    },
+
+    "expenses": {
+      "$listingId": {
+        ".read": "auth != null && (
+                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
+                    root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists()
+                  )",
+        ".write": "auth != null && (
+                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
+                    (root.child('users/'+auth.uid+'/role').val() === 'manager' &&
+                     root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists())
+                  )"
+      }
+    },
+
+    "bookings": {
+      "$listingId": {
+        ".read": "auth != null && (
+                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
+                    root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists()
+                  )",
+        ".write": "auth != null && (
+                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
+                    (root.child('users/'+auth.uid+'/role').val() === 'manager' &&
+                     root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists())
+                  )"
+      }
+    },
+
+    "categories": {
+      ".read":  "auth != null",
+      ".write": "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'"
+    },
+
+    "audit_log": {
+      ".read":  "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'",
+      ".write": "auth != null"
+    }
+  }
+}
