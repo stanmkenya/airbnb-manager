@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "lux-beyond-homes"
-  }
+    "default": "lux-beyond-homes",
+    "staging": "lux-beyond-homes"
+  },
+  "targets": {},
+  "etags": {}
 }
