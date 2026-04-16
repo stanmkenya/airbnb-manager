@@ -171,8 +171,8 @@ async def get_booking(
 @router.put("/{booking_id}")
 async def update_booking(
     booking_id: str,
-    listingId: str = Query(...),
     booking_update: BookingUpdate,
+    listingId: str = Query(...),
     current_user: dict = Depends(require_manager_or_admin)
 ):
     """

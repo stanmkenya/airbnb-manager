@@ -148,8 +148,8 @@ async def get_expense(
 @router.put("/{expense_id}")
 async def update_expense(
     expense_id: str,
-    listingId: str = Query(...),
     expense_update: ExpenseUpdate,
+    listingId: str = Query(...),
     current_user: dict = Depends(require_manager_or_admin)
 ):
     """
