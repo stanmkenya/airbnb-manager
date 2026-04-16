@@ -5,7 +5,7 @@ from datetime import datetime
 from ..firebase_client import firebase_client
 from .auth import get_current_user
 
-router = APIRouter(prefix="/blocked-dates", tags=["blocked-dates"])
+router = APIRouter(tags=["blocked-dates"])
 
 
 class BlockedDateCreate(BaseModel):
