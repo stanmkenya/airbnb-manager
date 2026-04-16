@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from typing import Optional
 from app.core.auth import verify_token, get_current_user
 from app.firebase_client import firebase_client
 
@@ -7,8 +8,8 @@ router = APIRouter()
 
 
 class ProfileUpdate(BaseModel):
-    displayName: str | None = None
-    photoURL: str | None = None
+    displayName: Optional[str] = None
+    photoURL: Optional[str] = None
 
 
 @router.post("/verify")

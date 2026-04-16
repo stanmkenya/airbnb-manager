@@ -1,40 +1,43 @@
 """
 Test configuration and fixtures
 """
+import os
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import Mock, patch
-from app.core.config import Settings
+from unittest.mock import Mock, patch, MagicMock
+
+# Set up environment variables before any imports
+os.environ['FIREBASE_SERVICE_ACCOUNT_JSON'] = '{"type": "service_account", "project_id": "test"}'
+os.environ['FIREBASE_DATABASE_URL'] = 'https://test-db.firebaseio.com'
+os.environ['ALLOWED_ORIGINS'] = 'http://localhost:3000'
+os.environ['DEBUG'] = 'true'
 
 
-# Mock Firebase for tests
+# Mock Firebase before importing the app
+@pytest.fixture(scope='session', autouse=True)
+def mock_firebase_init():
+    """Mock Firebase initialization at module level"""
+    with patch('firebase_admin.initialize_app'):
+        with patch('firebase_admin.credentials.Certificate'):
+            yield
+
+
 @pytest.fixture
 def mock_firebase():
-    """Mock Firebase Admin SDK"""
-    with patch('app.firebase_client.FirebaseClient') as mock:
-        mock_instance = Mock()
-        mock_instance.verify_token.return_value = {
-            'uid': 'test-user-123',
-            'email': 'test@example.com'
-        }
-        mock_instance.get_database_ref.return_value = Mock()
-        mock.return_value = mock_instance
-        yield mock_instance
+    """Mock Firebase Admin SDK for individual tests"""
+    mock_instance = MagicMock()
+    mock_instance.verify_token.return_value = {
+        'uid': 'test-user-123',
+        'email': 'test@example.com'
+    }
+    mock_ref = MagicMock()
+    mock_ref.get.return_value = None
+    mock_instance.get_database_ref.return_value = mock_ref
+    return mock_instance
 
 
 @pytest.fixture
-def mock_settings():
-    """Mock settings for tests"""
-    return Settings(
-        FIREBASE_SERVICE_ACCOUNT_JSON='{"test": "mock"}',
-        FIREBASE_DATABASE_URL='https://test-db.firebaseio.com',
-        ALLOWED_ORIGINS='http://localhost:3000',
-        DEBUG=True
-    )
-
-
-@pytest.fixture
-def client(mock_firebase):
+def client():
     """Test client"""
     from main import app
     return TestClient(app)
