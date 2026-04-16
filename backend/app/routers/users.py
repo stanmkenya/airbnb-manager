@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, Dict
 from app.core.auth import get_current_user, require_admin
 from app.firebase_client import firebase_client
@@ -12,7 +12,7 @@ class UserInvite(BaseModel):
     email: EmailStr
     displayName: str
     role: str  # 'admin', 'manager', 'viewer'
-    assignedListings: Optional[Dict[str, bool]] = {}
+    assignedListings: Optional[Dict[str, bool]] = Field(default_factory=dict)
 
 
 class RoleUpdate(BaseModel):
