@@ -4,7 +4,7 @@ from app.core.config import settings
 from app.core.cors import setup_cors
 
 # Import routers
-from app.routers import auth, listings, expenses, income, reports, export, users
+from app.routers import auth, listings, expenses, income, reports, export, users, blocked_dates
 
 # Create FastAPI app
 app = FastAPI(
@@ -26,6 +26,7 @@ app.include_router(income.router, prefix="/income", tags=["Income"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
 app.include_router(export.router, prefix="/export", tags=["Export"])
 app.include_router(users.router, prefix="/users", tags=["Users"])
+app.include_router(blocked_dates.router, prefix="/blocked-dates", tags=["Blocked Dates"])
 
 
 @app.get("/")
