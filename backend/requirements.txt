@@ -6,9 +6,6 @@ python-multipart==0.0.9
 # Firebase Admin SDK
 firebase-admin==6.4.0
 
-# CORS middleware
-python-cors==1.0.0
-
 # Environment variables
 python-dotenv==1.0.1
 
