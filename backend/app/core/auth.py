@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from app.firebase_client import firebase_client
+from app.core.firestore_helpers import get_document
 
 security = HTTPBearer()
 
@@ -27,12 +28,12 @@ async def verify_token(
 
 async def get_current_user(token: dict = Depends(verify_token)) -> dict:
     """
-    Get current user info from database using the verified token.
+    Get current user info from Firestore using the verified token.
     """
     try:
         uid = token['uid']
-        user_ref = firebase_client.get_database_ref(f'/users/{uid}')
-        user_data = user_ref.get()
+        # Use Firestore instead of Realtime Database
+        user_data = get_document('users', uid)
 
         if not user_data:
             raise HTTPException(
