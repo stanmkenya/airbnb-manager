@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional
+from app.core.collection_helpers import get_user_collection_id
 from app.core.auth import get_current_user
-from app.firebase_client import firebase_client
+from app.core.firestore_helpers import get_subcollection_documents
 from io import BytesIO
 import csv
 
@@ -20,27 +21,29 @@ async def export_csv(
     """
     Export expenses or bookings to CSV
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied")
 
     # Fetch data
     if type == 'expenses':
-        ref = firebase_client.get_database_ref(f'/expenses/{listingId}')
-        data = ref.get() or {}
+        data_list = get_subcollection_documents('collections', collection_id, f'expenses/{listingId}')
 
         # Filter by date
         filtered_data = []
-        for item_id, item in data.items():
+        for item in data_list:
             date = item.get('date', '')
             if from_date and date < from_date:
                 continue
             if to_date and date > to_date:
                 continue
             filtered_data.append({
-                'id': item_id,
+                'id': item.get('id'),
                 'date': item.get('date'),
                 'category': item.get('category'),
                 'subCategory': item.get('subCategory'),
@@ -64,19 +67,18 @@ async def export_csv(
         filename = f"expenses_{listingId}_{from_date or 'all'}_{to_date or 'all'}.csv"
 
     elif type == 'bookings':
-        ref = firebase_client.get_database_ref(f'/bookings/{listingId}')
-        data = ref.get() or {}
+        data_list = get_subcollection_documents('collections', collection_id, f'income/{listingId}')
 
         # Filter by date
         filtered_data = []
-        for item_id, item in data.items():
+        for item in data_list:
             check_in = item.get('checkIn', '')
             if from_date and check_in < from_date:
                 continue
             if to_date and check_in > to_date:
                 continue
             filtered_data.append({
-                'id': item_id,
+                'id': item.get('id'),
                 'guestName': item.get('guestName'),
                 'guestEmail': item.get('guestEmail'),
                 'guestPhone': item.get('guestPhone'),
@@ -125,8 +127,11 @@ async def export_excel(
     """
     Export to Excel (requires openpyxl implementation)
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if listingId and current_user['role'] != 'admin':
+    if listingId and current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -152,8 +157,11 @@ async def export_pdf(
     """
     Export to PDF (requires WeasyPrint implementation)
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if listingId and current_user['role'] != 'admin':
+    if listingId and current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied")

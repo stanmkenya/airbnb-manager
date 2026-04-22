@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from typing import Optional
-from app.core.auth import get_current_user, require_admin
-from app.firebase_client import firebase_client
+from app.core.collection_helpers import get_user_collection_id
+from app.core.auth import get_current_user
+from app.core.firestore_helpers import get_subcollection_documents, get_document
 from collections import defaultdict
 from datetime import datetime
 
@@ -14,17 +15,16 @@ async def monthly_summary(
     year: int = Query(datetime.now().year),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Get monthly expense summary by category
-    """
+    """Get monthly expense summary by category"""
+    collection_id = get_user_collection_id(current_user)
+
     # Determine which listings to query
-    if current_user['role'] == 'admin':
+    if current_user['role'] in ['collection_admin', 'superadmin']:
         if listingId:
             listing_ids = [listingId]
         else:
-            listings_ref = firebase_client.get_database_ref('/listings')
-            all_listings = listings_ref.get() or {}
-            listing_ids = list(all_listings.keys())
+            all_listings = get_subcollection_documents('collections', collection_id, 'listings')
+            listing_ids = [listing['id'] for listing in all_listings]
     else:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId:
@@ -38,10 +38,9 @@ async def monthly_summary(
     monthly_data = defaultdict(lambda: defaultdict(float))
 
     for lid in listing_ids:
-        expenses_ref = firebase_client.get_database_ref(f'/expenses/{lid}')
-        expenses = expenses_ref.get() or {}
+        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
 
-        for expense_id, expense in expenses.items():
+        for expense in expenses:
             date_str = expense.get('date', '')
             if date_str.startswith(str(year)):
                 month = date_str[:7]  # YYYY-MM
@@ -68,24 +67,23 @@ async def cumulative_report(
     month: int = Query(datetime.now().month),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Get daily cumulative expense report for a specific month
-    """
+    """Get daily cumulative expense report for a specific month"""
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             return {"error": "Access denied"}
 
     # Fetch expenses
-    expenses_ref = firebase_client.get_database_ref(f'/expenses/{listingId}')
-    expenses = expenses_ref.get() or {}
+    expenses = get_subcollection_documents('collections', collection_id, f'expenses/{listingId}')
 
     # Filter by month and aggregate by day
     month_str = f"{year}-{month:02d}"
     daily_totals = defaultdict(float)
 
-    for expense_id, expense in expenses.items():
+    for expense in expenses:
         date_str = expense.get('date', '')
         if date_str.startswith(month_str):
             daily_totals[date_str] += expense.get('amount', 0)
@@ -115,17 +113,16 @@ async def profit_loss_report(
     listingId: Optional[str] = Query(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Get P&L report by listing for a date range
-    """
+    """Get P&L report by listing for a date range"""
+    collection_id = get_user_collection_id(current_user)
+
     # Determine which listings to query
-    if current_user['role'] == 'admin':
+    if current_user['role'] in ['collection_admin', 'superadmin']:
         if listingId:
             listing_ids = [listingId]
         else:
-            listings_ref = firebase_client.get_database_ref('/listings')
-            all_listings = listings_ref.get() or {}
-            listing_ids = list(all_listings.keys())
+            all_listings = get_subcollection_documents('collections', collection_id, 'listings')
+            listing_ids = [listing['id'] for listing in all_listings]
     else:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId:
@@ -139,22 +136,19 @@ async def profit_loss_report(
 
     for lid in listing_ids:
         # Get listing info
-        listing_ref = firebase_client.get_database_ref(f'/listings/{lid}')
-        listing = listing_ref.get() or {}
+        listing = get_document(f'collections/{collection_id}/listings', lid) or {}
 
         # Calculate expenses
-        expenses_ref = firebase_client.get_database_ref(f'/expenses/{lid}')
-        expenses = expenses_ref.get() or {}
+        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
         total_expenses = sum(
-            e.get('amount', 0) for e in expenses.values()
+            e.get('amount', 0) for e in expenses
             if from_date <= e.get('date', '') <= to_date
         )
 
         # Calculate income
-        bookings_ref = firebase_client.get_database_ref(f'/bookings/{lid}')
-        bookings = bookings_ref.get() or {}
+        bookings = get_subcollection_documents('collections', collection_id, f'income/{lid}')
         total_income = sum(
-            b.get('netIncome', 0) for b in bookings.values()
+            b.get('netIncome', 0) for b in bookings
             if from_date <= b.get('checkIn', '') <= to_date
         )
 
@@ -174,32 +168,35 @@ async def profit_loss_report(
 async def portfolio_report(
     from_date: str = Query(...),
     to_date: str = Query(...),
-    current_user: dict = Depends(require_admin)
+    current_user: dict = Depends(get_current_user)
 ):
-    """
-    Get consolidated portfolio P&L (Admin only)
-    """
-    listings_ref = firebase_client.get_database_ref('/listings')
-    all_listings = listings_ref.get() or {}
+    """Get consolidated portfolio P&L (Collection admin only)"""
+    collection_id = get_user_collection_id(current_user)
+
+    # Only collection admin or superadmin can view portfolio
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    all_listings = get_subcollection_documents('collections', collection_id, 'listings')
 
     total_revenue = 0
     total_expenses = 0
     listings_data = []
 
-    for lid in all_listings.keys():
+    for listing in all_listings:
+        lid = listing['id']
+
         # Calculate expenses
-        expenses_ref = firebase_client.get_database_ref(f'/expenses/{lid}')
-        expenses = expenses_ref.get() or {}
+        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
         listing_expenses = sum(
-            e.get('amount', 0) for e in expenses.values()
+            e.get('amount', 0) for e in expenses
             if from_date <= e.get('date', '') <= to_date
         )
 
         # Calculate income
-        bookings_ref = firebase_client.get_database_ref(f'/bookings/{lid}')
-        bookings = bookings_ref.get() or {}
+        bookings = get_subcollection_documents('collections', collection_id, f'income/{lid}')
         listing_income = sum(
-            b.get('netIncome', 0) for b in bookings.values()
+            b.get('netIncome', 0) for b in bookings
             if from_date <= b.get('checkIn', '') <= to_date
         )
 
@@ -208,7 +205,7 @@ async def portfolio_report(
 
         listings_data.append({
             'listingId': lid,
-            'listingName': all_listings[lid].get('name', 'Unknown'),
+            'listingName': listing.get('name', 'Unknown'),
             'revenue': listing_income,
             'expenses': listing_expenses,
             'netIncome': listing_income - listing_expenses
@@ -233,24 +230,23 @@ async def occupancy_report(
     month: int = Query(datetime.now().month),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Get occupancy rate for a listing in a specific month
-    """
+    """Get occupancy rate for a listing in a specific month"""
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             return {"error": "Access denied"}
 
     # Fetch bookings
-    bookings_ref = firebase_client.get_database_ref(f'/bookings/{listingId}')
-    bookings = bookings_ref.get() or {}
+    bookings = get_subcollection_documents('collections', collection_id, f'income/{listingId}')
 
     # Calculate occupied nights
     month_str = f"{year}-{month:02d}"
     total_nights = 0
 
-    for booking_id, booking in bookings.items():
+    for booking in bookings:
         check_in = booking.get('checkIn', '')
         check_out = booking.get('checkOut', '')
 
@@ -279,17 +275,16 @@ async def year_over_year_report(
     listingId: Optional[str] = Query(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Year-over-year comparison
-    """
+    """Year-over-year comparison"""
+    collection_id = get_user_collection_id(current_user)
+
     # Determine which listings to query
-    if current_user['role'] == 'admin':
+    if current_user['role'] in ['collection_admin', 'superadmin']:
         if listingId:
             listing_ids = [listingId]
         else:
-            listings_ref = firebase_client.get_database_ref('/listings')
-            all_listings = listings_ref.get() or {}
-            listing_ids = list(all_listings.keys())
+            all_listings = get_subcollection_documents('collections', collection_id, 'listings')
+            listing_ids = [listing['id'] for listing in all_listings]
     else:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId:
@@ -304,18 +299,16 @@ async def year_over_year_report(
 
     for lid in listing_ids:
         # Expenses
-        expenses_ref = firebase_client.get_database_ref(f'/expenses/{lid}')
-        expenses = expenses_ref.get() or {}
-        for expense in expenses.values():
+        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
+        for expense in expenses:
             date_str = expense.get('date', '')
             if date_str:
                 year = date_str[:4]
                 yearly_data[year]['expenses'] += expense.get('amount', 0)
 
         # Income
-        bookings_ref = firebase_client.get_database_ref(f'/bookings/{lid}')
-        bookings = bookings_ref.get() or {}
-        for booking in bookings.values():
+        bookings = get_subcollection_documents('collections', collection_id, f'income/{lid}')
+        for booking in bookings:
             check_in = booking.get('checkIn', '')
             if check_in:
                 year = check_in[:4]

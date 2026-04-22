@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 from app.core.auth import verify_token, get_current_user
-from app.firebase_client import firebase_client
+from app.core.firestore_helpers import get_document, update_document
+import time
 
 router = APIRouter()
 
@@ -18,8 +19,7 @@ async def verify_user_token(token_data: dict = Depends(verify_token)):
     Verify Firebase ID token and return user profile
     """
     uid = token_data['uid']
-    user_ref = firebase_client.get_database_ref(f'/users/{uid}')
-    user_profile = user_ref.get()
+    user_profile = get_document('users', uid)
 
     if not user_profile:
         return {
@@ -52,7 +52,6 @@ async def update_profile(
     Update user profile (display name, photo URL)
     """
     uid = current_user['uid']
-    user_ref = firebase_client.get_database_ref(f'/users/{uid}')
 
     update_data = {}
     if profile_data.displayName is not None:
@@ -61,8 +60,8 @@ async def update_profile(
         update_data['photoURL'] = profile_data.photoURL
 
     if update_data:
-        update_data['updatedAt'] = firebase_client.get_database_ref().push().key
-        user_ref.update(update_data)
+        update_data['updatedAt'] = int(time.time() * 1000)
+        update_document('users', uid, update_data)
 
     return {
         "message": "Profile updated successfully",

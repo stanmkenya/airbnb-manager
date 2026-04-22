@@ -1,5 +1,5 @@
 import firebase_admin
-from firebase_admin import credentials, auth, db
+from firebase_admin import credentials, auth, db, firestore
 from app.core.config import settings
 
 
@@ -40,8 +40,13 @@ class FirebaseClient:
 
     @staticmethod
     def get_database_ref(path: str = '/'):
-        """Get Firebase Realtime Database reference"""
+        """Get Firebase Realtime Database reference (LEGACY - use Firestore instead)"""
         return db.reference(path)
+
+    @staticmethod
+    def get_firestore():
+        """Get Firestore client"""
+        return firestore.client()
 
     @staticmethod
     def get_user(uid: str):
