@@ -6,10 +6,9 @@ import {
   createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
-  sendEmailVerification,
 } from 'firebase/auth'
-import { ref, get, set } from 'firebase/database'
-import { auth, googleProvider, db } from '../firebase'
+import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
+import { auth, googleProvider, firestore } from '../firebase'
 import toast from 'react-hot-toast'
 
 const AuthContext = createContext(null)
@@ -21,39 +20,56 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        // Fetch user profile from database
-        const userRef = ref(db, `users/${firebaseUser.uid}`)
-        const snapshot = await get(userRef)
+      try {
+        if (firebaseUser) {
+          console.log('[Auth] User logged in:', firebaseUser.uid, firebaseUser.email)
 
-        if (snapshot.exists()) {
-          const profile = snapshot.val()
-          setUserProfile(profile)
-          setUser(firebaseUser)
+          // Fetch user profile from Firestore
+          const userRef = doc(firestore, 'users', firebaseUser.uid)
+          console.log('[Auth] Fetching user profile from Firestore...')
+          const snapshot = await getDoc(userRef)
 
-          // Update last login
-          await set(ref(db, `users/${firebaseUser.uid}/lastLogin`), Date.now())
-        } else {
-          // First time user - create profile
-          const newProfile = {
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0],
-            photoURL: firebaseUser.photoURL || null,
-            role: 'viewer', // Default role
-            assignedListings: {},
-            createdAt: Date.now(),
-            lastLogin: Date.now(),
-            isActive: true,
+          if (snapshot.exists()) {
+            const profile = { id: snapshot.id, ...snapshot.data() }
+            console.log('[Auth] User profile loaded:', profile)
+            setUserProfile(profile)
+            setUser(firebaseUser)
+
+            // Update last login
+            await updateDoc(userRef, {
+              lastLogin: Date.now()
+            })
+          } else {
+            console.log('[Auth] No profile found, creating new profile...')
+            // First time user - create profile
+            const newProfile = {
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0],
+              photoURL: firebaseUser.photoURL || null,
+              role: 'viewer', // Default role
+              assignedListings: {},
+              createdAt: Date.now(),
+              lastLogin: Date.now(),
+              isActive: true,
+            }
+            await setDoc(userRef, newProfile)
+            console.log('[Auth] New profile created:', newProfile)
+            setUserProfile({ id: firebaseUser.uid, ...newProfile })
+            setUser(firebaseUser)
           }
-          await set(userRef, newProfile)
-          setUserProfile(newProfile)
-          setUser(firebaseUser)
+        } else {
+          console.log('[Auth] No user logged in')
+          setUser(null)
+          setUserProfile(null)
         }
-      } else {
+      } catch (error) {
+        console.error('[Auth] Error in auth state change:', error)
+        toast.error('Failed to load user profile. Please try again.')
         setUser(null)
         setUserProfile(null)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     })
 
     return () => unsubscribe()
@@ -72,12 +88,7 @@ export const AuthProvider = ({ children }) => {
 
   const signInWithEmail = async (email, password) => {
     try {
-      const result = await signInWithEmailAndPassword(auth, email, password)
-      if (!result.user.emailVerified) {
-        toast.error('Please verify your email before signing in')
-        await firebaseSignOut(auth)
-        return
-      }
+      await signInWithEmailAndPassword(auth, email, password)
       toast.success('Signed in successfully!')
     } catch (error) {
       console.error('Email sign-in error:', error)
@@ -97,11 +108,10 @@ export const AuthProvider = ({ children }) => {
   const signUpWithEmail = async (email, password, displayName) => {
     try {
       const result = await createUserWithEmailAndPassword(auth, email, password)
-      await sendEmailVerification(result.user)
 
-      // Create user profile in database
-      const userRef = ref(db, `users/${result.user.uid}`)
-      await set(userRef, {
+      // Create user profile in Firestore
+      const userRef = doc(firestore, 'users', result.user.uid)
+      await setDoc(userRef, {
         email,
         displayName: displayName || email.split('@')[0],
         photoURL: null,
@@ -112,8 +122,7 @@ export const AuthProvider = ({ children }) => {
         isActive: true,
       })
 
-      toast.success('Account created! Please check your email to verify your account.')
-      await firebaseSignOut(auth)
+      toast.success('Account created successfully! You can now sign in.')
     } catch (error) {
       console.error('Sign-up error:', error)
       let errorMessage = 'Failed to create account'
