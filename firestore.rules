@@ -30,11 +30,25 @@ service cloud.firestore {
 
     // Users collection - users can read their own profile
     match /users/{userId} {
-      // Users can read their own profile, superadmins can read all profiles
-      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+      // Users can read their own profile
+      allow read: if isSignedIn() && request.auth.uid == userId;
 
-      // Only superadmins can write user data
-      allow write: if isSuperAdmin();
+      // Superadmins can read all users
+      allow read: if isSignedIn() &&
+                     get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+
+      // Users can update their own lastLogin, displayName, photoURL, updatedAt
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLogin', 'displayName', 'photoURL', 'updatedAt']);
+
+      // Superadmins can update any user field
+      allow update: if isSignedIn() &&
+                       get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
+
+      // Only superadmins can create or delete users
+      allow create, delete: if isSignedIn() &&
+                               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin';
     }
 
     // Collections - multi-tenant data structure
