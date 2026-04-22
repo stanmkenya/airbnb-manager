@@ -1,0 +1,106 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper function to get user data
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Helper function to check if user is superadmin
+    function isSuperAdmin() {
+      return isSignedIn() && getUserData().role == 'superadmin';
+    }
+
+    // Helper function to check if user is collection admin
+    function isCollectionAdmin() {
+      return isSignedIn() && getUserData().role == 'collection_admin';
+    }
+
+    // Helper function to check if user belongs to a collection
+    function belongsToCollection(collectionId) {
+      return isSignedIn() && getUserData().collectionId == collectionId;
+    }
+
+    // Users collection - users can read their own profile
+    match /users/{userId} {
+      // Users can read their own profile, superadmins can read all profiles
+      allow read: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
+
+      // Only superadmins can write user data
+      allow write: if isSuperAdmin();
+    }
+
+    // Collections - multi-tenant data structure
+    match /collections/{collectionId} {
+      // Superadmins can read/write all collections
+      allow read, write: if isSuperAdmin();
+
+      // Collection admins can read/write their own collection
+      allow read, write: if isCollectionAdmin() && belongsToCollection(collectionId);
+
+      // Regular users can read their collection
+      allow read: if belongsToCollection(collectionId);
+
+      // Listings subcollection
+      match /listings/{listingId} {
+        // Superadmins have full access
+        allow read, write: if isSuperAdmin();
+
+        // Collection admins can manage listings in their collection
+        allow read, write: if isCollectionAdmin() && belongsToCollection(collectionId);
+
+        // Regular users can read listings in their collection
+        allow read: if belongsToCollection(collectionId);
+      }
+
+      // Expenses subcollection
+      match /expenses/{expenseId} {
+        // Superadmins have full access
+        allow read, write: if isSuperAdmin();
+
+        // Collection admins and managers can manage expenses in their collection
+        allow read, write: if belongsToCollection(collectionId);
+      }
+
+      // Bookings subcollection
+      match /bookings/{bookingId} {
+        // Superadmins have full access
+        allow read, write: if isSuperAdmin();
+
+        // Collection admins and managers can manage bookings in their collection
+        allow read, write: if belongsToCollection(collectionId);
+      }
+
+      // Blocked dates subcollection
+      match /blocked-dates/{dateId} {
+        // Superadmins have full access
+        allow read, write: if isSuperAdmin();
+
+        // Collection admins and managers can manage blocked dates in their collection
+        allow read, write: if belongsToCollection(collectionId);
+      }
+    }
+
+    // Categories collection (global)
+    match /categories/{categoryId} {
+      // All authenticated users can read categories
+      allow read: if isSignedIn();
+
+      // Only superadmins can write categories
+      allow write: if isSuperAdmin();
+    }
+
+    // Audit log (admin only)
+    match /audit_log/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if isSignedIn(); // Anyone can write audit logs
+    }
+  }
+}
