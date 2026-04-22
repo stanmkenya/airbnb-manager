@@ -1,8 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
+from app.core.collection_helpers import get_user_collection_id
 from app.core.auth import get_current_user, require_manager_or_admin
-from app.firebase_client import firebase_client
+from app.core.firestore_helpers import (
+    get_subcollection_documents, get_document, add_document,
+    update_document, delete_document
+)
 import time
 from datetime import datetime
 
@@ -54,16 +58,18 @@ async def get_bookings(
     """
     Get bookings with optional filters
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     all_bookings = []
 
     # Determine which listings to query
-    if current_user['role'] == 'admin':
+    if current_user['role'] in ['collection_admin', 'superadmin']:
         if listingId:
             listing_ids = [listingId]
         else:
-            listings_ref = firebase_client.get_database_ref('/listings')
-            all_listings = listings_ref.get() or {}
-            listing_ids = list(all_listings.keys())
+            all_listings = get_subcollection_documents('collections', collection_id, 'listings')
+            listing_ids = [listing['id'] for listing in all_listings]
     else:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId:
@@ -73,25 +79,28 @@ async def get_bookings(
         else:
             listing_ids = list(assigned_listings.keys())
 
-    # Fetch bookings for each listing
-    for lid in listing_ids:
-        bookings_ref = firebase_client.get_database_ref(f'/bookings/{lid}')
-        bookings = bookings_ref.get() or {}
+    # Fetch all bookings from the collection
+    all_collection_bookings = get_subcollection_documents('collections', collection_id, 'bookings')
 
-        for booking_id, booking in bookings.items():
-            # Apply filters
-            if from_date and booking.get('checkIn', '') < from_date:
-                continue
-            if to_date and booking.get('checkOut', '') > to_date:
-                continue
-            if platform and booking.get('platform') != platform:
-                continue
+    # Filter bookings by listing IDs and other criteria
+    for booking in all_collection_bookings:
+        booking_listing_id = booking.get('listingId')
 
-            all_bookings.append({
-                'id': booking_id,
-                'listingId': lid,
-                **booking
-            })
+        # Check if booking belongs to one of the allowed listings
+        if booking_listing_id not in listing_ids:
+            continue
+
+        # Apply date filters
+        if from_date and booking.get('checkIn', '') < from_date:
+            continue
+        if to_date and booking.get('checkOut', '') > to_date:
+            continue
+
+        # Apply platform filter
+        if platform and booking.get('platform') != platform:
+            continue
+
+        all_bookings.append(booking)
 
     # Sort by check-in date descending
     all_bookings.sort(key=lambda x: x.get('checkIn', ''), reverse=True)
@@ -107,10 +116,13 @@ async def create_booking(
     """
     Create a new booking
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     listing_id = booking.listingId
 
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listing_id not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied to this listing")
@@ -122,9 +134,6 @@ async def create_booking(
     commission_pct = (booking.commissionPaid / total_paid * 100) if total_paid > 0 else 0
 
     # Create booking
-    bookings_ref = firebase_client.get_database_ref(f'/bookings/{listing_id}')
-    new_booking_ref = bookings_ref.push()
-
     booking_data = {
         **booking.dict(exclude={'listingId', 'totalPaid'}),
         'nights': nights,
@@ -135,10 +144,10 @@ async def create_booking(
         'createdAt': int(time.time() * 1000)
     }
 
-    new_booking_ref.set(booking_data)
+    booking_id = add_document(f'collections/{collection_id}/income/{listing_id}', booking_data)
 
     return {
-        "id": new_booking_ref.key,
+        "id": booking_id,
         "listingId": listing_id,
         **booking_data
     }
@@ -153,14 +162,16 @@ async def get_booking(
     """
     Get a specific booking
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    booking_ref = firebase_client.get_database_ref(f'/bookings/{listingId}/{booking_id}')
-    booking = booking_ref.get()
+    booking = get_document(f'collections/{collection_id}/income/{listingId}', booking_id)
 
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -178,14 +189,16 @@ async def update_booking(
     """
     Update a booking
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    booking_ref = firebase_client.get_database_ref(f'/bookings/{listingId}/{booking_id}')
-    existing = booking_ref.get()
+    existing = get_document(f'collections/{collection_id}/income/{listingId}', booking_id)
 
     if not existing:
         raise HTTPException(status_code=404, detail="Booking not found")
@@ -222,8 +235,7 @@ async def update_booking(
     update_data['updatedAt'] = int(time.time() * 1000)
 
     # Log audit
-    audit_ref = firebase_client.get_database_ref('/audit_log').push()
-    audit_ref.set({
+    audit_data = {
         'table': 'bookings',
         'recordId': booking_id,
         'action': 'update',
@@ -231,9 +243,10 @@ async def update_booking(
         'oldValues': existing,
         'newValues': update_data,
         'timestamp': int(time.time() * 1000)
-    })
+    }
+    add_document('audit_log', audit_data)
 
-    booking_ref.update(update_data)
+    update_document(f'collections/{collection_id}/income/{listingId}', booking_id, update_data)
 
     return {"message": "Booking updated successfully"}
 
@@ -247,21 +260,22 @@ async def delete_booking(
     """
     Delete a booking
     """
+    # Get collection (supports superadmin)
+    collection_id = get_user_collection_id(current_user)
+
     # Check access
-    if current_user['role'] != 'admin':
+    if current_user['role'] not in ['collection_admin', 'superadmin']:
         assigned_listings = current_user.get('assignedListings', {})
         if listingId not in assigned_listings:
             raise HTTPException(status_code=403, detail="Access denied")
 
-    booking_ref = firebase_client.get_database_ref(f'/bookings/{listingId}/{booking_id}')
-    existing = booking_ref.get()
+    existing = get_document(f'collections/{collection_id}/income/{listingId}', booking_id)
 
     if not existing:
         raise HTTPException(status_code=404, detail="Booking not found")
 
     # Log audit
-    audit_ref = firebase_client.get_database_ref('/audit_log').push()
-    audit_ref.set({
+    audit_data = {
         'table': 'bookings',
         'recordId': booking_id,
         'action': 'delete',
@@ -269,8 +283,9 @@ async def delete_booking(
         'oldValues': existing,
         'newValues': {},
         'timestamp': int(time.time() * 1000)
-    })
+    }
+    add_document('audit_log', audit_data)
 
-    booking_ref.delete()
+    delete_document(f'collections/{collection_id}/income/{listingId}', booking_id)
 
     return {"message": "Booking deleted successfully"}
