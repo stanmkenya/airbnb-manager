@@ -35,10 +35,16 @@ export const AuthProvider = ({ children }) => {
             setUserProfile(profile)
             setUser(firebaseUser)
 
-            // Update last login
-            await updateDoc(userRef, {
-              lastLogin: Date.now()
-            })
+            // Update last login (non-blocking - don't fail login if this fails)
+            try {
+              await updateDoc(userRef, {
+                lastLogin: Date.now()
+              })
+              console.log('[Auth] Last login timestamp updated')
+            } catch (updateError) {
+              console.warn('[Auth] Failed to update lastLogin (non-critical):', updateError.message)
+              // Don't fail the entire login process if lastLogin update fails
+            }
           } else {
             console.log('[Auth] No profile found, creating new profile...')
             // First time user - create profile
