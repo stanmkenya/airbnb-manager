@@ -37,16 +37,22 @@ async def monthly_summary(
     # Aggregate expenses by month and category
     monthly_data = defaultdict(lambda: defaultdict(float))
 
-    for lid in listing_ids:
-        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
+    # Fetch all expenses from the collection
+    all_expenses = get_subcollection_documents('collections', collection_id, 'expenses')
 
-        for expense in expenses:
-            date_str = expense.get('date', '')
-            if date_str.startswith(str(year)):
-                month = date_str[:7]  # YYYY-MM
-                category = expense.get('category', 'Other')
-                amount = expense.get('amount', 0)
-                monthly_data[month][category] += amount
+    for expense in all_expenses:
+        expense_listing_id = expense.get('listingId')
+
+        # Only include expenses for allowed listings
+        if expense_listing_id not in listing_ids:
+            continue
+
+        date_str = expense.get('date', '')
+        if date_str.startswith(str(year)):
+            month = date_str[:7]  # YYYY-MM
+            category = expense.get('category', 'Other')
+            amount = expense.get('amount', 0)
+            monthly_data[month][category] += amount
 
     # Format response
     result = []
@@ -76,14 +82,18 @@ async def cumulative_report(
         if listingId not in assigned_listings:
             return {"error": "Access denied"}
 
-    # Fetch expenses
-    expenses = get_subcollection_documents('collections', collection_id, f'expenses/{listingId}')
+    # Fetch all expenses from the collection
+    all_expenses = get_subcollection_documents('collections', collection_id, 'expenses')
 
-    # Filter by month and aggregate by day
+    # Filter by listing and month, then aggregate by day
     month_str = f"{year}-{month:02d}"
     daily_totals = defaultdict(float)
 
-    for expense in expenses:
+    for expense in all_expenses:
+        # Only include expenses for this listing
+        if expense.get('listingId') != listingId:
+            continue
+
         date_str = expense.get('date', '')
         if date_str.startswith(month_str):
             daily_totals[date_str] += expense.get('amount', 0)
@@ -132,24 +142,26 @@ async def profit_loss_report(
         else:
             listing_ids = list(assigned_listings.keys())
 
+    # Fetch all expenses and bookings from the collection
+    all_expenses = get_subcollection_documents('collections', collection_id, 'expenses')
+    all_bookings = get_subcollection_documents('collections', collection_id, 'bookings')
+
     results = []
 
     for lid in listing_ids:
         # Get listing info
         listing = get_document(f'collections/{collection_id}/listings', lid) or {}
 
-        # Calculate expenses
-        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
+        # Calculate expenses for this listing
         total_expenses = sum(
-            e.get('amount', 0) for e in expenses
-            if from_date <= e.get('date', '') <= to_date
+            e.get('amount', 0) for e in all_expenses
+            if e.get('listingId') == lid and from_date <= e.get('date', '') <= to_date
         )
 
-        # Calculate income
-        bookings = get_subcollection_documents('collections', collection_id, f'income/{lid}')
+        # Calculate income for this listing
         total_income = sum(
-            b.get('netIncome', 0) for b in bookings
-            if from_date <= b.get('checkIn', '') <= to_date
+            b.get('totalPaid', 0) for b in all_bookings
+            if b.get('listingId') == lid and from_date <= b.get('checkIn', '') <= to_date
         )
 
         results.append({
@@ -179,6 +191,10 @@ async def portfolio_report(
 
     all_listings = get_subcollection_documents('collections', collection_id, 'listings')
 
+    # Fetch all expenses and bookings from the collection
+    all_expenses = get_subcollection_documents('collections', collection_id, 'expenses')
+    all_bookings = get_subcollection_documents('collections', collection_id, 'bookings')
+
     total_revenue = 0
     total_expenses = 0
     listings_data = []
@@ -186,18 +202,16 @@ async def portfolio_report(
     for listing in all_listings:
         lid = listing['id']
 
-        # Calculate expenses
-        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
+        # Calculate expenses for this listing
         listing_expenses = sum(
-            e.get('amount', 0) for e in expenses
-            if from_date <= e.get('date', '') <= to_date
+            e.get('amount', 0) for e in all_expenses
+            if e.get('listingId') == lid and from_date <= e.get('date', '') <= to_date
         )
 
-        # Calculate income
-        bookings = get_subcollection_documents('collections', collection_id, f'income/{lid}')
+        # Calculate income for this listing
         listing_income = sum(
-            b.get('netIncome', 0) for b in bookings
-            if from_date <= b.get('checkIn', '') <= to_date
+            b.get('totalPaid', 0) for b in all_bookings
+            if b.get('listingId') == lid and from_date <= b.get('checkIn', '') <= to_date
         )
 
         total_revenue += listing_income
@@ -239,14 +253,18 @@ async def occupancy_report(
         if listingId not in assigned_listings:
             return {"error": "Access denied"}
 
-    # Fetch bookings
-    bookings = get_subcollection_documents('collections', collection_id, f'income/{listingId}')
+    # Fetch all bookings from the collection
+    all_bookings = get_subcollection_documents('collections', collection_id, 'bookings')
 
-    # Calculate occupied nights
+    # Calculate occupied nights for this listing
     month_str = f"{year}-{month:02d}"
     total_nights = 0
 
-    for booking in bookings:
+    for booking in all_bookings:
+        # Only include bookings for this listing
+        if booking.get('listingId') != listingId:
+            continue
+
         check_in = booking.get('checkIn', '')
         check_out = booking.get('checkOut', '')
 
@@ -294,25 +312,34 @@ async def year_over_year_report(
         else:
             listing_ids = list(assigned_listings.keys())
 
+    # Fetch all expenses and bookings from the collection
+    all_expenses = get_subcollection_documents('collections', collection_id, 'expenses')
+    all_bookings = get_subcollection_documents('collections', collection_id, 'bookings')
+
     # Aggregate by year
     yearly_data = defaultdict(lambda: {'revenue': 0, 'expenses': 0})
 
-    for lid in listing_ids:
-        # Expenses
-        expenses = get_subcollection_documents('collections', collection_id, f'expenses/{lid}')
-        for expense in expenses:
-            date_str = expense.get('date', '')
-            if date_str:
-                year = date_str[:4]
-                yearly_data[year]['expenses'] += expense.get('amount', 0)
+    # Process expenses
+    for expense in all_expenses:
+        # Only include expenses for allowed listings
+        if expense.get('listingId') not in listing_ids:
+            continue
 
-        # Income
-        bookings = get_subcollection_documents('collections', collection_id, f'income/{lid}')
-        for booking in bookings:
-            check_in = booking.get('checkIn', '')
-            if check_in:
-                year = check_in[:4]
-                yearly_data[year]['revenue'] += booking.get('netIncome', 0)
+        date_str = expense.get('date', '')
+        if date_str:
+            year = date_str[:4]
+            yearly_data[year]['expenses'] += expense.get('amount', 0)
+
+    # Process bookings
+    for booking in all_bookings:
+        # Only include bookings for allowed listings
+        if booking.get('listingId') not in listing_ids:
+            continue
+
+        check_in = booking.get('checkIn', '')
+        if check_in:
+            year = check_in[:4]
+            yearly_data[year]['revenue'] += booking.get('totalPaid', 0)
 
     # Format response
     result = []
