@@ -1,25 +1,33 @@
 import { useState } from 'react'
-import { Plus, Edit, Trash2, Home, MapPin, DollarSign, Bed } from 'lucide-react'
+import { Plus, Edit, Trash2, Home, MapPin, DollarSign, Bed, Calendar } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useListings, useCreateListing, useUpdateListing, useDeleteListing } from '../hooks/useListings'
+import { useBookings, useCreateBooking } from '../hooks/useIncome'
+import { useBlockedDates, useBlockDate, useUnblockDate } from '../hooks/useBlockedDates'
 import { isAdmin } from '../utils/roleGuard'
 import { formatCurrency } from '../utils/formatCurrency'
 import Modal from '../components/ui/Modal'
 import Button from '../components/ui/Button'
 import ListingForm from '../components/forms/ListingForm'
+import ListingCalendar from '../components/calendar/ListingCalendar'
 
 export default function Listings() {
   const { userProfile } = useAuth()
   const { data: listings, isLoading } = useListings()
+  const { data: allBookings } = useBookings()
   const createListing = useCreateListing()
   const updateListing = useUpdateListing()
   const deleteListing = useDeleteListing()
+  const createBooking = useCreateBooking()
 
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [selectedListing, setSelectedListing] = useState(null)
   const [editingListing, setEditingListing] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
 
   const canManageListings = isAdmin(userProfile)
+  const canManageDates = userProfile?.role === 'collection_admin' || userProfile?.role === 'superadmin' || userProfile?.role === 'manager'
 
   const handleCreate = () => {
     setEditingListing(null)
@@ -56,6 +64,11 @@ export default function Listings() {
         setDeletingId(null)
       }
     }
+  }
+
+  const handleOpenCalendar = (listing) => {
+    setSelectedListing(listing)
+    setIsCalendarOpen(true)
   }
 
   if (isLoading) {
@@ -143,35 +156,47 @@ export default function Listings() {
                 </a>
               )}
 
-              {canManageListings && (
-                <div className="flex gap-2 pt-4 border-t border-gray-200">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleEdit(listing)}
-                    className="flex-1"
-                  >
-                    <Edit size={16} className="mr-1" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDelete(listing.id)}
-                    disabled={deletingId === listing.id}
-                    className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                  >
-                    {deletingId === listing.id ? (
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
-                    ) : (
-                      <>
-                        <Trash2 size={16} className="mr-1" />
-                        Delete
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
+              <div className="pt-4 border-t border-gray-200 space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleOpenCalendar(listing)}
+                  className="w-full"
+                >
+                  <Calendar size={16} className="mr-2" />
+                  View Calendar
+                </Button>
+
+                {canManageListings && (
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEdit(listing)}
+                      className="flex-1"
+                    >
+                      <Edit size={16} className="mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDelete(listing.id)}
+                      disabled={deletingId === listing.id}
+                      className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                    >
+                      {deletingId === listing.id ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
+                      ) : (
+                        <>
+                          <Trash2 size={16} className="mr-1" />
+                          Delete
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -197,6 +222,72 @@ export default function Listings() {
           isLoading={createListing.isPending || updateListing.isPending}
         />
       </Modal>
+
+      {/* Calendar Modal */}
+      {selectedListing && (
+        <CalendarModal
+          listing={selectedListing}
+          isOpen={isCalendarOpen}
+          onClose={() => {
+            setIsCalendarOpen(false)
+            setSelectedListing(null)
+          }}
+          canManage={canManageDates}
+        />
+      )}
     </div>
+  )
+}
+
+function CalendarModal({ listing, isOpen, onClose, canManage }) {
+  const { data: allBookings } = useBookings()
+  const { data: blockedDates } = useBlockedDates(listing.id)
+  const blockDate = useBlockDate()
+  const unblockDate = useUnblockDate()
+  const createBooking = useCreateBooking()
+
+  // Filter bookings for this specific listing
+  const bookings = allBookings?.filter(b => b.listingId === listing.id) || []
+
+  const handleBlockDate = async (date) => {
+    await blockDate.mutateAsync({
+      listingId: listing.id,
+      date,
+      reason: 'Blocked by manager'
+    })
+  }
+
+  const handleUnblockDate = async (date) => {
+    await unblockDate.mutateAsync({
+      listingId: listing.id,
+      date
+    })
+  }
+
+  const handleCreateBooking = async (bookingData) => {
+    await createBooking.mutateAsync({
+      ...bookingData,
+      listingId: listing.id
+    })
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${listing.name} - Calendar`}
+      size="xl"
+    >
+      <ListingCalendar
+        listingId={listing.id}
+        listing={listing}
+        bookings={bookings}
+        blockedDates={blockedDates || []}
+        onBlockDate={handleBlockDate}
+        onUnblockDate={handleUnblockDate}
+        onCreateBooking={handleCreateBooking}
+        canManage={canManage}
+      />
+    </Modal>
   )
 }

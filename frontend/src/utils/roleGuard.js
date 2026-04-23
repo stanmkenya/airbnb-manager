@@ -17,12 +17,12 @@ export function hasRole(userProfile, requiredRole) {
 }
 
 /**
- * Check if user is admin
+ * Check if user is admin (collection_admin or superadmin)
  * @param {Object} userProfile - User profile object
  * @returns {boolean} True if user is admin
  */
 export function isAdmin(userProfile) {
-  return hasRole(userProfile, 'admin')
+  return hasRole(userProfile, ['collection_admin', 'superadmin'])
 }
 
 /**
@@ -31,7 +31,7 @@ export function isAdmin(userProfile) {
  * @returns {boolean} True if user is manager or admin
  */
 export function isManagerOrAdmin(userProfile) {
-  return hasRole(userProfile, ['admin', 'manager'])
+  return hasRole(userProfile, ['collection_admin', 'superadmin', 'manager'])
 }
 
 /**
