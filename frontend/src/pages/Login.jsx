@@ -46,11 +46,11 @@ export default function Login() {
       <div className="max-w-md w-full">
         {/* Logo/Header */}
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-primary-900 mb-2">
-            Airbnb Manager
-          </h1>
+          <div className="flex justify-center mb-4">
+            <img src="/logo-dark.svg" alt="Lux Beyond" className="h-12" />
+          </div>
           <p className="text-gray-600">
-            Manage your properties with ease
+            Luxury property management made easy
           </p>
         </div>
 

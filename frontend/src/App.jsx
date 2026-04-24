@@ -8,6 +8,8 @@ import Income from './pages/Income'
 import Reports from './pages/Reports'
 import GuestDirectory from './pages/GuestDirectory'
 import Admin from './pages/Admin'
+import Users from './pages/Users'
+import Collections from './pages/Collections'
 import Layout from './components/layout/Layout'
 
 function App() {
@@ -37,6 +39,8 @@ function App() {
                 <Route path="/income" element={<Income />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/guests" element={<GuestDirectory />} />
+                <Route path="/users" element={<Users />} />
+                <Route path="/collections" element={<Collections />} />
                 <Route path="/admin" element={<Admin />} />
               </Routes>
             </Layout>

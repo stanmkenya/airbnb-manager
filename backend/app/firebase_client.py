@@ -72,6 +72,33 @@ class FirebaseClient:
         """Delete a user"""
         return auth.delete_user(uid)
 
+    @staticmethod
+    def generate_password_reset_link(email: str, action_code_settings=None):
+        """
+        Generate a password reset link for a user.
+        This link can be sent via email to allow the user to set their password.
+        """
+        try:
+            link = auth.generate_password_reset_link(email, action_code_settings)
+            return link
+        except Exception as e:
+            raise ValueError(f"Failed to generate password reset link: {str(e)}")
+
+    @staticmethod
+    def send_password_reset_email(email: str):
+        """
+        Trigger Firebase to send a password reset email to the user.
+        Note: This requires Firebase Auth email templates to be configured in Firebase Console.
+        """
+        try:
+            # Firebase Admin SDK doesn't have a direct method to send emails
+            # You need to use the client SDK or generate a link and send it yourself
+            # For now, we'll generate the link that can be sent via custom email
+            link = auth.generate_password_reset_link(email)
+            return link
+        except Exception as e:
+            raise ValueError(f"Failed to send password reset email: {str(e)}")
+
 
 # Initialize Firebase client
 firebase_client = FirebaseClient()

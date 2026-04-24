@@ -64,9 +64,10 @@ async def get_current_user(token: dict = Depends(verify_token)) -> dict:
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """
-    Require admin role for protected endpoints.
+    Require admin role (superadmin or collection_admin) for protected endpoints.
     """
-    if current_user.get('role') != 'admin':
+    role = current_user.get('role')
+    if role not in ['superadmin', 'collection_admin']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required"
@@ -77,9 +78,10 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 async def require_manager_or_admin(current_user: dict = Depends(get_current_user)) -> dict:
     """
     Require manager or admin role for protected endpoints.
+    Allows: manager, collection_admin, superadmin
     """
     role = current_user.get('role')
-    if role not in ['manager', 'admin']:
+    if role not in ['manager', 'collection_admin', 'superadmin']:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Manager or Admin access required"

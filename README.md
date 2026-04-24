@@ -5,13 +5,15 @@ A full-stack web application for managing Airbnb properties, tracking expenses, 
 ## Features
 
 - **Multi-Property Management**: Manage unlimited listings from a single dashboard
+- **Multi-Tenant Collections**: Organize properties into separate collections with isolated data
 - **Expense Tracking**: Log daily expenses with hierarchical categories
 - **Income & Booking Tracking**: Track bookings, calculate commissions, and monitor revenue
+- **Blocked Dates**: Mark properties as unavailable for specific date ranges
 - **Reports & Analytics**: Generate monthly summaries, P&L reports, occupancy rates, and more
-- **Multi-User Support**: Role-based access control (Admin, Manager, Viewer)
+- **Multi-User Support**: Role-based access control (Super Admin, Collection Admin, Manager, Viewer)
 - **Firebase Authentication**: Gmail OAuth + email/password login with password reset
 - **Export Capabilities**: Export data to PDF, Excel, and CSV formats
-- **Real-time Data**: Firebase Realtime Database for instant updates
+- **Real-time Data**: Cloud Firestore for instant updates and powerful queries
 
 ## Tech Stack
 
@@ -33,7 +35,7 @@ A full-stack web application for managing Airbnb properties, tracking expenses, 
 - **openpyxl** for Excel exports
 
 ### Infrastructure
-- **Firebase Realtime Database** for data storage
+- **Cloud Firestore** for data storage with multi-tenant collections
 - **Firebase Authentication** for user management
 - **Firebase Hosting** for frontend deployment
 - **GitHub Actions** for CI/CD
@@ -61,9 +63,10 @@ cd airbnb-manager
 3. Enable **Firebase Authentication**:
    - Go to Authentication > Sign-in method
    - Enable **Google** and **Email/Password** providers
-4. Enable **Firebase Realtime Database**:
-   - Go to Realtime Database > Create Database
-   - Start in **locked mode** (we'll deploy rules later)
+4. Enable **Cloud Firestore**:
+   - Go to Firestore Database > Create Database
+   - Start in **production mode** (we'll deploy rules later)
+   - Choose a location closest to your users
 5. Generate a service account:
    - Go to Project Settings > Service Accounts
    - Click "Generate new private key"
@@ -90,7 +93,6 @@ Edit `frontend/.env` and add your Firebase config:
 ```env
 VITE_FIREBASE_API_KEY=your_api_key
 VITE_FIREBASE_AUTH_DOMAIN=your-app.firebaseapp.com
-VITE_FIREBASE_DATABASE_URL=https://your-app-default-rtdb.firebaseio.com
 VITE_FIREBASE_PROJECT_ID=your-project-id
 VITE_FIREBASE_STORAGE_BUCKET=your-app.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
@@ -123,7 +125,6 @@ Edit `backend/.env`:
 
 ```env
 FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
-FIREBASE_DATABASE_URL=https://your-app-default-rtdb.firebaseio.com
 ALLOWED_ORIGINS=http://localhost:3000
 DEBUG=true
 ```
@@ -134,10 +135,10 @@ DEBUG=true
 
 ```bash
 # From project root
-firebase deploy --only database
+firebase deploy --only firestore:rules
 ```
 
-This deploys the security rules in `database.rules.json`.
+This deploys the Firestore security rules in `firestore.rules`.
 
 ### 6. Run the Application
 
@@ -162,14 +163,16 @@ npm run dev
 
 The app will run on `http://localhost:3000`
 
-### 7. Create Your First Admin User
+### 7. Create Your First Super Admin User
 
 1. Open http://localhost:3000 in your browser
 2. Sign up with email/password or Gmail
-3. The first user is automatically assigned the 'admin' role (you may need to manually set this in Firebase Database)
-4. Go to Firebase Console > Realtime Database
-5. Find your user under `/users/{uid}`
-6. Change `role` from `'viewer'` to `'admin'`
+3. The first user should be assigned the 'superadmin' role
+4. Go to Firebase Console > Firestore Database
+5. Navigate to the `users` collection
+6. Find your user document by UID
+7. Set the `role` field to `'superadmin'`
+8. As a Super Admin, you can now create collections and invite other users
 
 ## Deployment
 
@@ -214,7 +217,6 @@ The repository includes GitHub Actions workflows:
 - `FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
-- `VITE_FIREBASE_DATABASE_URL`
 - `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
@@ -272,14 +274,35 @@ Admins can add custom categories from the settings panel.
 
 | Role | Permissions |
 |------|------------|
-| **Admin** | Full access: all listings, users, reports, exports, settings |
-| **Manager** | Assigned listings only; add/edit expenses and income; export own listings |
-| **Viewer** | Read-only on assigned listings; view reports and export |
+| **Super Admin** | Platform-wide access: manage all collections, all users, all data; create collections |
+| **Collection Admin** | Full access within assigned collection: manage users, listings, reports, exports, settings |
+| **Manager** | Assigned listings within collection; add/edit expenses and income; export own listings |
+| **Viewer** | Read-only on assigned listings within collection; view reports and export |
+
+## User Invitations
+
+Admins can invite new users to the platform through the Users page:
+
+1. Go to **Users** → Click **"Invite User"**
+2. Fill in user details (email, name, role, collection)
+3. System generates a password reset link
+4. **Copy the link** and send it to the user (via email, Slack, etc.)
+5. User clicks the link to set their password and can then sign in
+
+**Email Automation (Optional):**
+- Configure automatic email sending using SendGrid, Gmail SMTP, or AWS SES
+- See [EMAIL_SETUP.md](EMAIL_SETUP.md) for detailed setup instructions
+- Works great for high-volume user invitations
+
+**Manual Process (No Setup Required):**
+- Just copy the link from the success screen and send it yourself
+- Perfect for small teams or getting started quickly
 
 ## Security
 
 - All API endpoints require Firebase ID token authentication
-- Firebase Security Rules enforce listing-level access at the database layer
+- Firestore Security Rules enforce collection-level and listing-level access at the database layer
+- Multi-tenant data isolation through collection-based access control
 - HTTPS enforced in production (Firebase Hosting provides TLS automatically)
 - Service account credentials stored securely in environment variables
 - Role-based access control implemented at both frontend and backend
@@ -300,9 +323,10 @@ Admins can add custom categories from the settings panel.
 
 ### Firebase permission denied
 
-- Verify Firebase Security Rules are deployed: `firebase deploy --only database`
-- Check that your user has the correct role in the database
-- Ensure user has appropriate `assignedListings` set
+- Verify Firestore Security Rules are deployed: `firebase deploy --only firestore:rules`
+- Check that your user has the correct role in Firestore
+- Ensure user is assigned to a collection (`collectionId` field)
+- Ensure user has appropriate `assignedListings` set within their collection
 
 ### Backend won't start
 

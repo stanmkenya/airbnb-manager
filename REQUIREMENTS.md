@@ -1,12 +1,12 @@
 # Airbnb Property Manager — Product Requirements Document
-**Version 1.2 | April 2026**
+**Version 1.3 | April 2026**
 
 > **Stack at a glance**
 > | Layer | Technology |
 > |---|---|
 > | Frontend | React + Vite → Firebase Hosting |
 > | Backend | Python FastAPI |
-> | Database | Firebase Realtime Database |
+> | Database | **Cloud Firestore** |
 > | Auth | Firebase Auth (Gmail OAuth + Email/Password + Password Reset) |
 > | Export | PDF (WeasyPrint) + Excel (openpyxl) |
 > | CI/CD | GitHub Actions → Firebase Hosting |
@@ -20,6 +20,7 @@
 | 1.0 | April 2026 | Initial release |
 | 1.1 | April 2026 | Auth updated to Firebase (Gmail OAuth + password reset). Database updated to Firebase Realtime DB. Architecture revised accordingly. |
 | 1.2 | April 2026 | Hosting changed from Netlify to Firebase Hosting. All Netlify references removed. CI/CD updated to use Firebase CLI + GitHub Actions. |
+| 1.3 | April 2026 | **Database migrated from Firebase Realtime DB to Cloud Firestore**. **Multi-tenant Collections architecture implemented**. **Super Admin role added** (distinct from Collection Admin). Blocked dates feature added. |
 
 ---
 
@@ -34,8 +35,8 @@
 7. [Reports & Analytics](#7-reports--analytics)
 8. [Export Features](#8-export-features)
 9. [Technical Architecture](#9-technical-architecture)
-10. [Firebase Realtime Database Structure](#10-firebase-realtime-database-structure)
-11. [Firebase Security Rules](#11-firebase-security-rules)
+10. [Cloud Firestore Database Structure](#10-cloud-firestore-database-structure)
+11. [Firestore Security Rules](#11-firestore-security-rules)
 12. [Repository Structure](#12-repository-structure)
 13. [API Endpoints](#13-api-endpoints)
 14. [Non-Functional Requirements](#14-non-functional-requirements)
@@ -63,19 +64,22 @@ A full-stack web application that replaces spreadsheets with a centralised, real
 
 - **React + Vite** frontend deployed on **Firebase Hosting**
 - **Python FastAPI** backend serving a REST API
-- **Firebase Realtime Database** as the persistent data store
+- **Cloud Firestore** as the persistent data store with multi-tenant collections architecture
 - **Firebase Authentication** handling Gmail OAuth, email/password login, and password resets
 - **GitHub** repository with **CI/CD** pipeline auto-deploying to Firebase Hosting
 - **PDF** and **Excel** export built into the backend
+- **Multi-tenant Collections** system for managing multiple property groups with isolated data
 
 ### 1.3 Scope — v1.0
 
 **In scope:**
 - Multi-listing management (unlimited listings)
+- **Multi-tenant Collections** for managing multiple property groups
 - Daily expense entry with full category hierarchy
 - Income and booking tracking per listing
+- **Blocked dates** management for property availability
 - Monthly summary and cumulative daily reports
-- Multi-user with roles: Admin, Property Manager, Viewer
+- Multi-user with roles: **Super Admin**, **Collection Admin**, Property Manager, Viewer
 - Gmail OAuth + email/password login + password reset
 - Export to PDF and Excel
 - Firebase Hosting deployment with GitHub Actions
@@ -123,16 +127,23 @@ A full-stack web application that replaces spreadsheets with a centralised, real
 
 ### 2.3 Role Assignment
 
-> Firebase Auth handles **who** the user is. The Firebase Realtime Database handles **what** they can access — roles and listing assignments stored in the DB.
+> Firebase Auth handles **who** the user is. Cloud Firestore handles **what** they can access — roles, collection assignments, and listing assignments stored in the DB.
+
+**Multi-Tenant Architecture:**
+- Users are assigned to a **Collection** (a group of properties)
+- Each collection has isolated data (listings, expenses, bookings)
+- Collections enable managing multiple independent property groups in one platform
 
 | Role | Assigned By | Permissions |
 |---|---|---|
-| **Admin** | First user (auto) or another Admin | Full access: all listings, users, reports, exports, settings |
-| **Property Manager** | Admin | Assigned listings only; add/edit expenses and income; export own listings |
-| **Viewer** | Admin | Read-only on assigned listings; view reports and export |
+| **Super Admin** | System (first user) or another Super Admin | Platform-wide access: all collections, all users, all data; create/manage collections |
+| **Collection Admin** | Super Admin | Full access within assigned collection: manage users, listings, reports, exports, settings; cannot access other collections |
+| **Property Manager** | Super Admin or Collection Admin | Assigned listings within their collection only; add/edit expenses and income; export own listings |
+| **Viewer** | Super Admin or Collection Admin | Read-only on assigned listings within their collection; view reports and export |
 
 ### 2.4 Security Rules Summary
-- Firebase Realtime Database Security Rules enforce listing-level access server-side
+- **Firestore Security Rules** enforce collection-level and listing-level access server-side
+- Multi-tenant data isolation through collection-based access control
 - HTTPS enforced everywhere (Firebase Hosting provides TLS automatically)
 - CORS restricted to the Firebase Hosting frontend domain in production
 - Firebase service account credentials stored in GitHub Secrets / Firebase Hosting env vars — **never committed to the repo**
@@ -151,13 +162,20 @@ A full-stack web application that replaces spreadsheets with a centralised, real
 
 ### 3.1 User Stories
 
-#### Admin
-- As an Admin I can invite users by email and assign them a role and listings
-- As an Admin I can view and edit all listings and all financial data
-- As an Admin I can see a consolidated portfolio P&L across all listings
-- As an Admin I can export full portfolio reports to PDF and Excel
-- As an Admin I can configure expense categories globally
-- As an Admin I can deactivate a user without deleting their historical data
+#### Super Admin
+- As a Super Admin I can create and manage multiple collections (property groups)
+- As a Super Admin I can invite users to any collection and assign them roles
+- As a Super Admin I can view and edit all collections, listings, and financial data across the platform
+- As a Super Admin I can see consolidated reports across all collections
+- As a Super Admin I can configure expense categories globally
+- As a Super Admin I can promote/demote users and deactivate accounts
+
+#### Collection Admin
+- As a Collection Admin I can invite users to my collection and assign them roles
+- As a Collection Admin I can view and edit all listings and financial data within my collection
+- As a Collection Admin I can see a consolidated portfolio P&L across all listings in my collection
+- As a Collection Admin I can export full collection reports to PDF and Excel
+- As a Collection Admin I can deactivate users within my collection without deleting their historical data
 
 #### Property Manager
 - As a Property Manager I can log daily expenses for my assigned listings
@@ -345,167 +363,239 @@ Each listing record contains:
 | Hosting | Firebase Hosting | Global CDN, HTTPS, CI/CD, URL rewrites for SPA |
 | Backend | Python FastAPI | REST API; async; auto Swagger docs at `/docs` |
 | Auth (server) | firebase-admin SDK | ID token verification on every route |
-| Database | Firebase Realtime Database | JSON tree; real-time sync; no schema migrations |
-| DB Access (backend) | firebase-admin Python SDK | Read/write Realtime DB from FastAPI |
-| DB Rules | Firebase Security Rules | Listing-level access enforced at DB layer |
+| Database | **Cloud Firestore** | Document/collection model; real-time sync; built-in indexing; multi-tenant collections |
+| DB Access (backend) | firebase-admin Python SDK | Read/write Firestore from FastAPI |
+| DB Rules | **Firestore Security Rules** | Collection-level + listing-level access enforced at DB layer |
 | PDF Export | WeasyPrint | Server-side HTML → PDF |
 | Excel Export | openpyxl | Formatted `.xlsx` generation |
 | CI/CD | GitHub Actions → Firebase Hosting | Auto-deploy on merge to `main` |
 
 ---
 
-## 10. Firebase Realtime Database Structure
+## 10. Cloud Firestore Database Structure
 
-```json
-{
-  "users": {
-    "{uid}": {
-      "email": "string",
-      "displayName": "string",
-      "photoURL": "string",
-      "role": "admin | manager | viewer",
-      "assignedListings": { "{listingId}": true },
-      "createdAt": "timestamp",
-      "lastLogin": "timestamp",
-      "isActive": true
-    }
-  },
+**Multi-Tenant Collections Architecture:**
+The database uses a hierarchical structure where data is organized into collections for multi-tenancy.
 
-  "listings": {
-    "{listingId}": {
-      "name": "string",
-      "address": "string",
-      "airbnbUrl": "string",
-      "defaultRate": 0,
-      "bedrooms": 0,
-      "bathrooms": 0,
-      "status": "active | inactive",
-      "assignedManagers": { "{uid}": true },
-      "createdBy": "{uid}",
-      "createdAt": "timestamp"
-    }
-  },
-
-  "expenses": {
-    "{listingId}": {
-      "{expenseId}": {
-        "date": "YYYY-MM-DD",
-        "category": "string",
-        "subCategory": "string",
-        "amount": 0.00,
-        "notes": "string",
-        "receiptRef": "string",
-        "enteredBy": "{uid}",
-        "createdAt": "timestamp",
-        "updatedAt": "timestamp"
-      }
-    }
-  },
-
-  "bookings": {
-    "{listingId}": {
-      "{bookingId}": {
-        "guestName": "string",
-        "guestPhone": "string",
-        "guestEmail": "string",
-        "checkIn": "YYYY-MM-DD",
-        "checkOut": "YYYY-MM-DD",
-        "nights": 0,
-        "nightlyRate": 0.00,
-        "totalPaid": 0.00,
-        "platform": "Airbnb | Booking.com | Direct | VRBO | Other",
-        "commissionPaid": 0.00,
-        "netIncome": 0.00,
-        "commissionPct": 0.00,
-        "notes": "string",
-        "enteredBy": "{uid}",
-        "createdAt": "timestamp"
-      }
-    }
-  },
-
-  "categories": {
-    "{categoryId}": {
-      "name": "string",
-      "parentId": "string | null",
-      "isDefault": true,
-      "createdBy": "{uid}"
-    }
-  },
-
-  "audit_log": {
-    "{logId}": {
-      "table": "expenses | bookings | listings | users",
-      "recordId": "string",
-      "action": "create | update | delete",
-      "changedBy": "{uid}",
-      "oldValues": {},
-      "newValues": {},
-      "timestamp": "timestamp"
-    }
-  }
-}
 ```
+/users (collection)
+  /{uid} (document)
+    - email: string
+    - displayName: string
+    - photoURL: string
+    - role: "superadmin" | "collection_admin" | "manager" | "viewer"
+    - collectionId: string (reference to assigned collection)
+    - assignedListings: { "{listingId}": true }
+    - createdAt: timestamp
+    - createdBy: string (uid)
+    - lastLogin: timestamp
+    - isActive: boolean
+
+/collections (collection)
+  /{collectionId} (document)
+    - name: string
+    - description: string
+    - isActive: boolean
+    - createdAt: timestamp
+    - createdBy: string (email)
+    - updatedAt: timestamp
+    - userCount: number
+
+  /{collectionId}/listings (subcollection)
+    /{listingId} (document)
+      - name: string
+      - address: string
+      - airbnbUrl: string
+      - defaultRate: number
+      - bedrooms: number
+      - bathrooms: number
+      - status: "active" | "inactive"
+      - assignedManagers: { "{uid}": true }
+      - createdBy: string (uid)
+      - createdAt: timestamp
+      - updatedAt: timestamp
+
+  /{collectionId}/expenses (subcollection)
+    /{expenseId} (document)
+      - listingId: string
+      - date: "YYYY-MM-DD"
+      - category: string
+      - subCategory: string
+      - amount: number
+      - notes: string
+      - receiptRef: string
+      - enteredBy: string (uid)
+      - createdAt: timestamp
+      - updatedAt: timestamp
+
+  /{collectionId}/bookings (subcollection)
+    /{bookingId} (document)
+      - listingId: string
+      - guestName: string
+      - guestPhone: string
+      - guestEmail: string
+      - checkIn: "YYYY-MM-DD"
+      - checkOut: "YYYY-MM-DD"
+      - nights: number
+      - nightlyRate: number
+      - totalPaid: number
+      - platform: "Airbnb" | "Booking.com" | "Direct" | "VRBO" | "Other"
+      - commissionPaid: number
+      - netIncome: number
+      - commissionPct: number
+      - notes: string
+      - enteredBy: string (uid)
+      - createdAt: timestamp
+      - updatedAt: timestamp
+
+  /{collectionId}/blocked-dates (subcollection)
+    /{dateId} (document)
+      - listingId: string
+      - startDate: "YYYY-MM-DD"
+      - endDate: "YYYY-MM-DD"
+      - reason: string
+      - createdBy: string (uid)
+      - createdAt: timestamp
+
+/categories (collection - global)
+  /{categoryId} (document)
+    - name: string
+    - parentId: string | null
+    - isDefault: boolean
+    - createdBy: string (uid)
+
+/audit_log (collection)
+  /{logId} (document)
+    - table: "expenses" | "bookings" | "listings" | "users" | "collections"
+    - recordId: string
+    - collectionId: string
+    - action: "create" | "update" | "delete"
+    - changedBy: string (uid)
+    - oldValues: map
+    - newValues: map
+    - timestamp: timestamp
+```
+
+**Key Changes from Realtime Database:**
+- Multi-tenant architecture with collections as top-level containers
+- Listings, expenses, bookings, and blocked dates are subcollections within each collection
+- Users reference their assigned collection via `collectionId` field
+- Firestore document/collection structure instead of JSON tree
+- Built-in indexing and querying capabilities
 
 ---
 
-## 11. Firebase Security Rules
+## 11. Firestore Security Rules
 
-```json
-{
-  "rules": {
-    "users": {
-      "$uid": {
-        ".read":  "$uid === auth.uid || root.child('users/'+auth.uid+'/role').val() === 'admin'",
-        ".write": "root.child('users/'+auth.uid+'/role').val() === 'admin'"
+**Multi-Tenant Security Model:**
+Firestore security rules enforce collection-level data isolation and role-based access control.
+
+```javascript
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && getUserData().role == 'superadmin';
+    }
+
+    function isCollectionAdmin() {
+      return isSignedIn() && getUserData().role == 'collection_admin';
+    }
+
+    function belongsToCollection(collectionId) {
+      return isSignedIn() && getUserData().collectionId == collectionId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isSignedIn() && request.auth.uid == userId;
+
+      // Superadmins can read all users
+      allow read: if isSuperAdmin();
+
+      // Users can update their own profile (limited fields)
+      allow update: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly(['lastLogin', 'displayName', 'photoURL', 'updatedAt']);
+
+      // Superadmins can update any user
+      allow update: if isSuperAdmin();
+
+      // Only superadmins can create or delete users
+      allow create, delete: if isSuperAdmin();
+    }
+
+    // Collections - multi-tenant data structure
+    match /collections/{collectionId} {
+      // Superadmins can read/write all collections
+      allow read, write: if isSuperAdmin();
+
+      // Collection admins can read/write their own collection
+      allow read, write: if isCollectionAdmin() && belongsToCollection(collectionId);
+
+      // Regular users can read their collection
+      allow read: if belongsToCollection(collectionId);
+
+      // Listings subcollection
+      match /listings/{listingId} {
+        allow read, write: if isSuperAdmin();
+        allow read, write: if isCollectionAdmin() && belongsToCollection(collectionId);
+        allow read: if belongsToCollection(collectionId);
       }
-    },
 
-    "listings": {
-      ".read":  "auth != null",
-      ".write": "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'"
-    },
-
-    "expenses": {
-      "$listingId": {
-        ".read": "auth != null && (
-                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
-                    root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists()
-                  )",
-        ".write": "auth != null && (
-                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
-                    (root.child('users/'+auth.uid+'/role').val() === 'manager' &&
-                     root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists())
-                  )"
+      // Expenses subcollection
+      match /expenses/{expenseId} {
+        allow read, write: if isSuperAdmin();
+        allow read, write: if belongsToCollection(collectionId);
       }
-    },
 
-    "bookings": {
-      "$listingId": {
-        ".read": "auth != null && (
-                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
-                    root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists()
-                  )",
-        ".write": "auth != null && (
-                    root.child('users/'+auth.uid+'/role').val() === 'admin' ||
-                    (root.child('users/'+auth.uid+'/role').val() === 'manager' &&
-                     root.child('users/'+auth.uid+'/assignedListings/'+$listingId).exists())
-                  )"
+      // Bookings subcollection
+      match /bookings/{bookingId} {
+        allow read, write: if isSuperAdmin();
+        allow read, write: if belongsToCollection(collectionId);
       }
-    },
 
-    "categories": {
-      ".read":  "auth != null",
-      ".write": "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'"
-    },
+      // Blocked dates subcollection
+      match /blocked-dates/{dateId} {
+        allow read, write: if isSuperAdmin();
+        allow read, write: if belongsToCollection(collectionId);
+      }
+    }
 
-    "audit_log": {
-      ".read":  "auth != null && root.child('users/'+auth.uid+'/role').val() === 'admin'",
-      ".write": "auth != null"
+    // Categories collection (global)
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // Audit log (admin only)
+    match /audit_log/{logId} {
+      allow read: if isSuperAdmin();
+      allow write: if isSignedIn();
     }
   }
 }
 ```
+
+**Key Security Features:**
+- Collection-based data isolation prevents cross-collection access
+- Super Admins have platform-wide access
+- Collection Admins have full access only within their assigned collection
+- Regular users (managers, viewers) can only access data in their assigned collection
+- Helper functions provide reusable role-checking logic
 
 ---
 
@@ -603,6 +693,15 @@ All endpoints require `Authorization: Bearer {firebase_id_token}` unless noted.
 | `POST` | `/auth/verify` | Verify Firebase ID token; return user profile + role from DB |
 | `PUT` | `/auth/profile` | Update display name / preferences |
 
+### Collections *(New in v1.3)*
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/collections` | List all collections (Super Admin) or user's collection (others) |
+| `GET` | `/collections/{id}` | Get specific collection details |
+| `POST` | `/collections` | Create new collection *(Super Admin only)* |
+| `PUT` | `/collections/{id}` | Update collection *(Super Admin or Collection Admin)* |
+| `DELETE` | `/collections/{id}` | Delete collection *(Super Admin only)* |
+
 ### Listings
 | Method | Endpoint | Description |
 |---|---|---|
@@ -630,6 +729,15 @@ All endpoints require `Authorization: Bearer {firebase_id_token}` unless noted.
 | `GET` | `/income/{id}` | Get single booking |
 | `PUT` | `/income/{id}` | Edit booking |
 | `DELETE` | `/income/{id}` | Delete booking |
+
+### Blocked Dates *(New in v1.3)*
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/blocked-dates` | List blocked dates — query params: `listingId`, `from`, `to` |
+| `POST` | `/blocked-dates` | Add blocked date range |
+| `GET` | `/blocked-dates/{id}` | Get single blocked date entry |
+| `PUT` | `/blocked-dates/{id}` | Edit blocked date |
+| `DELETE` | `/blocked-dates/{id}` | Delete blocked date |
 
 ### Reports
 | Method | Endpoint | Description |

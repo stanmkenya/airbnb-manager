@@ -16,6 +16,9 @@ export function useExpenses(filters = {}) {
       const response = await apiClient.get(`/expenses?${params.toString()}`)
       return response.data
     },
+    retry: 1, // Retry once if it fails (for auth timing issues)
+    retryDelay: 500, // Wait 500ms before retrying
+    staleTime: 30000, // Consider data fresh for 30 seconds
   })
 }
 

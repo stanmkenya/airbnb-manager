@@ -23,24 +23,45 @@ def mock_firebase_init():
 
 
 @pytest.fixture
-def mock_firebase():
-    """Mock Firebase Admin SDK for individual tests"""
-    mock_instance = MagicMock()
-    mock_instance.verify_token.return_value = {
+def mock_firebase_client():
+    """Create a mock firebase_client that can be used in tests"""
+    mock = MagicMock()
+
+    # Default mock for verify_token
+    mock.verify_token.return_value = {
         'uid': 'test-user-123',
         'email': 'test@example.com'
     }
+
+    # Default mock for database refs
     mock_ref = MagicMock()
     mock_ref.get.return_value = None
-    mock_instance.get_database_ref.return_value = mock_ref
-    return mock_instance
+    mock_ref.push.return_value = MagicMock(key='test-id-123')
+    mock.get_database_ref.return_value = mock_ref
+    mock.create_user.return_value = MagicMock(uid='new-user-123')
+
+    return mock
 
 
 @pytest.fixture
 def client():
-    """Test client"""
-    from main import app
-    return TestClient(app)
+    """Test client with Firebase mocked"""
+    # Patch firebase_client in all locations it's imported
+    with patch('app.core.auth.firebase_client') as auth_mock, \
+         patch('app.routers.listings.firebase_client') as listings_mock, \
+         patch('app.routers.expenses.firebase_client') as expenses_mock, \
+         patch('app.routers.income.firebase_client') as income_mock, \
+         patch('app.routers.users.firebase_client') as users_mock:
+
+        # Set up default mocks
+        for mock in [auth_mock, listings_mock, expenses_mock, income_mock, users_mock]:
+            mock.verify_token.return_value = {'uid': 'test-123', 'email': 'test@example.com'}
+            mock_ref = MagicMock()
+            mock_ref.get.return_value = {'role': 'admin', 'active': True}
+            mock.get_database_ref.return_value = mock_ref
+
+        from main import app
+        yield TestClient(app)
 
 
 @pytest.fixture

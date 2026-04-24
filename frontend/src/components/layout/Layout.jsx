@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import {
@@ -7,8 +8,12 @@ import {
   TrendingUp,
   BarChart3,
   Users,
+  UserCog,
+  FolderOpen,
   Settings,
   LogOut,
+  Menu,
+  X,
 } from 'lucide-react'
 
 const navigation = [
@@ -21,6 +26,7 @@ const navigation = [
 ]
 
 export default function Layout({ children }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const location = useLocation()
   const { user, userProfile, signOut } = useAuth()
 
@@ -28,16 +34,39 @@ export default function Layout({ children }) {
     return location.pathname === path
   }
 
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false)
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Mobile Header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 z-30">
+        <img src="/logo-dark.svg" alt="Lux Beyond" className="h-8" />
+        <button
+          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+        >
+          {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </div>
+
+      {/* Mobile Menu Backdrop */}
+      {mobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={closeMobileMenu}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200">
+      <div className={`fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 z-50 transform transition-transform duration-300 ease-in-out ${
+        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+      }`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="p-6 border-b border-gray-200">
-            <h1 className="text-2xl font-bold text-primary-600">
-              Airbnb Manager
-            </h1>
+          <div className="p-6 border-b border-gray-200 flex items-center justify-center">
+            <img src="/logo-dark.svg" alt="Lux Beyond" className="h-10" />
           </div>
 
           {/* Navigation */}
@@ -48,6 +77,7 @@ export default function Layout({ children }) {
                 <Link
                   key={item.name}
                   to={item.href}
+                  onClick={closeMobileMenu}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
                     isActive(item.href)
                       ? 'bg-primary-50 text-primary-700'
@@ -60,18 +90,61 @@ export default function Layout({ children }) {
               )
             })}
 
-            {userProfile?.role === 'admin' && (
-              <Link
-                to="/admin"
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  isActive('/admin')
-                    ? 'bg-primary-50 text-primary-700'
-                    : 'text-gray-700 hover:bg-gray-100'
-                }`}
-              >
-                <Settings size={20} />
-                Admin
-              </Link>
+            {/* Admin/Management Section */}
+            {(userProfile?.role === 'superadmin' || userProfile?.role === 'collection_admin') && (
+              <>
+                <div className="pt-4 pb-2 px-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    Management
+                  </p>
+                </div>
+
+                {/* Users - visible to superadmin and collection_admin */}
+                <Link
+                  to="/users"
+                  onClick={closeMobileMenu}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                    isActive('/users')
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <UserCog size={20} />
+                  Users
+                </Link>
+
+                {/* Collections - visible only to superadmin */}
+                {userProfile?.role === 'superadmin' && (
+                  <Link
+                    to="/collections"
+                    onClick={closeMobileMenu}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      isActive('/collections')
+                        ? 'bg-primary-50 text-primary-700'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <FolderOpen size={20} />
+                    Collections
+                  </Link>
+                )}
+
+                {/* Legacy Admin Page - keep for backward compatibility */}
+                {userProfile?.role === 'admin' && (
+                  <Link
+                    to="/admin"
+                    onClick={closeMobileMenu}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                      isActive('/admin')
+                        ? 'bg-primary-50 text-primary-700'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Settings size={20} />
+                    Admin
+                  </Link>
+                )}
+              </>
             )}
           </nav>
 
@@ -99,7 +172,10 @@ export default function Layout({ children }) {
               </div>
             </div>
             <button
-              onClick={signOut}
+              onClick={() => {
+                signOut()
+                closeMobileMenu()
+              }}
               className="w-full flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <LogOut size={18} />
@@ -110,8 +186,8 @@ export default function Layout({ children }) {
       </div>
 
       {/* Main Content */}
-      <div className="ml-64">
-        <main className="p-8">
+      <div className="lg:ml-64 pt-16 lg:pt-0">
+        <main className="p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

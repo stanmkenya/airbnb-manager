@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 120 120" role="img">
+  <title>HostLedger</title>
+  <desc>HostLedger app icon — house with ledger document inside</desc>
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#0F6E56"/>
+  <rect x="10" y="10" width="100" height="100" rx="20" fill="#1D9E75"/>
+  <path d="M28 48 L60 26 L92 48 L92 88 L28 88 Z" fill="#085041"/>
+  <path d="M32 50 L60 30 L88 50 L88 86 L32 86 Z" fill="#0F6E56"/>
+  <rect x="44" y="60" width="32" height="26" rx="4" fill="#085041"/>
+  <rect x="52" y="38" width="16" height="14" rx="3" fill="#9FE1CB"/>
+  <rect x="56" y="41" width="2" height="8" fill="#085041"/>
+  <rect x="53" y="46" width="8" height="2" fill="#085041"/>
+  <rect x="36" y="56" width="12" height="11" rx="3" fill="#9FE1CB"/>
+  <rect x="72" y="56" width="12" height="11" rx="3" fill="#9FE1CB"/>
+  <rect x="39" y="59" width="6" height="2" fill="#0F6E56"/>
+  <rect x="39" y="63" width="6" height="2" fill="#0F6E56"/>
+  <rect x="75" y="59" width="6" height="2" fill="#0F6E56"/>
+  <rect x="75" y="63" width="6" height="2" fill="#0F6E56"/>
+  <rect x="47" y="64" width="11" height="2" fill="#1D9E75"/>
+  <rect x="47" y="68" width="11" height="2" fill="#1D9E75"/>
+  <rect x="47" y="72" width="7"  height="2" fill="#1D9E75"/>
+  <rect x="62" y="64" width="11" height="2" fill="#1D9E75"/>
+  <rect x="62" y="68" width="11" height="2" fill="#1D9E75"/>
+  <rect x="62" y="72" width="7"  height="2" fill="#1D9E75"/>
+  <rect x="44" y="86" width="32" height="4" rx="2" fill="#085041"/>
+  <rect x="28" y="86" width="64" height="4" rx="2" fill="#085041"/>
+</svg>

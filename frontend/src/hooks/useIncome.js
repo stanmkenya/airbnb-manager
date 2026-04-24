@@ -16,6 +16,9 @@ export function useBookings(filters = {}) {
       const response = await apiClient.get(`/income?${params.toString()}`)
       return response.data
     },
+    retry: 1, // Retry once if it fails (for auth timing issues)
+    retryDelay: 500, // Wait 500ms before retrying
+    staleTime: 30000, // Consider data fresh for 30 seconds
   })
 }
 
@@ -33,7 +36,18 @@ export function useCreateBooking() {
       toast.success('Booking added successfully!')
     },
     onError: (error) => {
-      toast.error(error.message || 'Failed to add booking')
+      console.error('Booking creation error:', error)
+      const errorMessage = error.response?.data?.detail || error.message || 'Failed to add booking'
+
+      // Handle array of validation errors
+      if (Array.isArray(errorMessage)) {
+        const messages = errorMessage.map(err => err.msg || JSON.stringify(err)).join(', ')
+        toast.error(messages)
+      } else if (typeof errorMessage === 'object') {
+        toast.error(JSON.stringify(errorMessage))
+      } else {
+        toast.error(errorMessage)
+      }
     },
   })
 }

@@ -137,18 +137,72 @@ async def invite_user(
             'assignedListings': invite.assignedListings or {},
             'createdAt': int(time.time() * 1000),
             'createdBy': current_user['uid'],
-            'isActive': True
+            'isActive': True,
+            'invitedBy': current_user['email']
         }
         set_document('users', firebase_user.uid, user_profile)
 
-        # In production, send password reset email here
-        # firebase_admin.auth.generate_password_reset_link(invite.email)
+        # Generate password reset link and prepare for email sending
+        password_reset_link = None
+        email_status = "pending"
+
+        try:
+            # Generate the password reset link
+            password_reset_link = firebase_client.generate_password_reset_link(invite.email)
+
+            # Log the link for manual sending (until email service is configured)
+            separator = "=" * 80
+            print(f"\n{separator}")
+            print(f"[USER INVITATION] New user invited: {invite.email}")
+            print(f"[USER INVITATION] Display Name: {invite.displayName}")
+            print(f"[USER INVITATION] Role: {invite.role}")
+            print(f"[USER INVITATION] Collection: {assigned_collection}")
+            print(f"[USER INVITATION] Invited by: {current_user['email']}")
+            print("\n[PASSWORD RESET LINK]")
+            print(password_reset_link)
+            print(f"\nPlease send this link to {invite.email} to allow them to set their password.")
+            print(f"{separator}\n")
+
+            email_status = "link_generated"
+
+            # Try to send email if email service is configured
+            try:
+                from app.services.email_service import send_invitation_email
+
+                email_sent = send_invitation_email(
+                    to_email=invite.email,
+                    user_name=invite.displayName,
+                    reset_link=password_reset_link,
+                    invited_by=current_user.get('displayName', current_user['email'])
+                )
+
+                if email_sent:
+                    email_status = "sent"
+                    print(f"[USER INVITATION] Email sent successfully to {invite.email}")
+                else:
+                    email_status = "not_configured"
+                    print("[USER INVITATION] Email service not configured - link must be sent manually")
+
+            except ImportError:
+                # Email service not available
+                email_status = "not_configured"
+                print("[USER INVITATION] Email service not available - link must be sent manually")
+            except Exception as email_send_error:
+                email_status = "send_failed"
+                print(f"[USER INVITATION] Failed to send email: {email_send_error}")
+
+        except Exception as email_error:
+            # Don't fail the entire invitation if link generation fails
+            print(f"[USER INVITATION] Warning: Failed to generate password reset link: {email_error}")
+            email_status = "failed"
 
         return {
-            "message": "User invited successfully",
+            "message": f"User '{invite.displayName}' invited successfully! Password reset link has been generated.",
             "uid": firebase_user.uid,
             "email": invite.email,
-            "tempPassword": temp_password  # In production, don't return this - send reset email instead
+            "passwordResetLink": password_reset_link,  # Frontend can display/copy this
+            "emailStatus": email_status,
+            "instructions": "Send the password reset link to the user via email. They can use it to set their password and sign in."
         }
 
     except Exception as e:
